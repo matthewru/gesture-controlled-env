@@ -3,20 +3,45 @@ import '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-backend-webgl';
 import * as tfjsWasm from '@tensorflow/tfjs-backend-wasm';
 import * as handpose from '@tensorflow-models/handpose'
-import * as tf from '@tensorflow/tfjs';
-import { useCallback } from 'react';
-import _ from 'lodash';
-
+import * as THREE from 'three';
 
 tfjsWasm.setWasmPaths(
     `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${
         tfjsWasm.version_wasm}/dist/`);
 
-function HandTracker({onGesture}) {
+function HandTracker() {
+    const fpsLabel = document.createElement('div');
     const videoRef = useRef(null)
     const canvasRef = useRef(null);
-    const debouncedOnGesture = useCallback(_.debounce(onGesture, 100), [onGesture]);
+    const threejsCavnasRef = useRef(null);
+    const sceneRef = useRef(null);
+
+    const STREAM_WIDTH = 320;
+    const STREAM_HEIGHT = 240
+
+    const FRAME_LIMIT = 60;
+
+
     useEffect(() => {
+
+        let lastFrameTime = performance.now();
+        let frameCount = 0;
+        let fps = 0;
+        const frameInterval = 1000/FRAME_LIMIT
+
+        function calculateFPS() {
+            const now = performance.now();
+            const deltaTime = now - lastFrameTime;
+            frameCount++;
+
+            if (deltaTime >= 1000) {
+                fps = frameCount;
+                frameCount = 0;
+                lastFrameTime = now;
+            }
+
+            return fps;
+        }
 
         // access webcam stream
         async function setupCamera() {
@@ -29,41 +54,71 @@ function HandTracker({onGesture}) {
             }
         }
 
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, (window.innerWidth - STREAM_WIDTH) / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas: threejsCavnasRef.current });
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.setSize(window.innerWidth - STREAM_WIDTH, window.innerHeight);
+        camera.position.z = 5;
+        sceneRef.current = scene;
+
+        // Add a basic cube
+        const geometry = new THREE.BoxGeometry();
+        const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+        const cube = new THREE.Mesh(geometry, material);
+        scene.add(cube);
+
+
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            fps = calculateFPS()
+            renderer.render(scene, camera);
+            updateFPSLabel(fps)
+
+        }
+
+        animate()
+
         async function setupHandTracking() {
             try {
-                // await tf.setBackend('webgl');
                 const canvas = canvasRef.current;
                 const ctx = canvas.getContext('2d');
-                canvas.width = 640;
-                canvas.height = 480; 
-                videoRef.current.width = 640
-                videoRef.current.height = 480
+                canvas.width = STREAM_WIDTH;
+                canvas.height = STREAM_HEIGHT; 
+                videoRef.current.width = STREAM_WIDTH
+                videoRef.current.height = STREAM_HEIGHT
                 const model = await handpose.load();
                 setInterval(async () => {
                     if (videoRef.current) {
                         try {
                             const predictions = await model.estimateHands(videoRef.current)
                             ctx.clearRect(0, 0, canvas.width, canvas.height);
-                            for (let i = 0; i < predictions.length; i++)
+                            if (predictions.length > 0)
                             {
-                                const keypoints = predictions[i].landmarks;
-                                // console.log(keypoints)
+                                const keypoints = predictions[0].landmarks;
                                 drawLandmarks(ctx, keypoints)
-                                // console.log("drawn landmarks")
                                 drawConnections(ctx, keypoints)
-                                // const gesture = detectGesture(keypoints)
-                                console.log(detectGesture(keypoints))
-                                // onGesture(gesture)
-                                // if (gesture)
-                                //     
-                                // console.log(gesture)   
+                                const [idxTipX, idxTipY, idxTipZ] = keypoints[8]
+
+                                const ndcX = (idxTipX / videoRef.current.videoWidth) * 2 - 1;
+                                const ndcY = -(idxTipY / videoRef.current.videoHeight) * 2 + 1;
+                                // const ndcZ = (idxTipY / videoRef.current.videoHeight) * 2 + 1;
+
+                                cube.position.x = ndcX * -8;
+                                cube.position.y = ndcY * 8;
+                                // cube.position.z = ndcZ * -4;
+                                // console.log(detectGesture(keypoints))
                             }
+
                         }
                         catch (error ){
                             console.log(error)
                         }
                     }
-            }, 30);
+            }, 10);
             }   catch (error) {
                 console.error('Error setting up hand tracking:', error);
             }
@@ -72,7 +127,7 @@ function HandTracker({onGesture}) {
         function drawLandmarks(ctx, landmarks) {
             landmarks.forEach(([x, y, z]) => {
                 ctx.beginPath()
-                ctx.arc(x, y, 5, 0, 2 * Math.PI)
+                ctx.arc(x/2, y/2, 2.5, 0, 2 * Math.PI)
                 ctx.fillStyle = 'red'
                 ctx.fill()
             })
@@ -89,8 +144,8 @@ function HandTracker({onGesture}) {
 
             connections.forEach(([start, end]) => {
                 ctx.beginPath()
-                ctx.moveTo(landmarks[start][0], landmarks[start][1]);
-                ctx.lineTo(landmarks[end][0], landmarks[end][1]);
+                ctx.moveTo(landmarks[start][0]/2, landmarks[start][1]/2);
+                ctx.lineTo(landmarks[end][0]/2, landmarks[end][1]/2);
                 ctx.strokeStyle = 'white'
                 ctx.stroke()
             })
@@ -103,44 +158,81 @@ function HandTracker({onGesture}) {
             }
             const thumbTip = keypoints[4];
             const indextTip = keypoints[8];
-            // console.log(thumbTip)
             const dist = Math.sqrt(
                 Math.pow(thumbTip[0] - indextTip[0], 2) +
                 Math.pow(thumbTip[1] - indextTip[1], 2) + 
                 Math.pow(thumbTip[2] - indextTip[2], 2))
-            // console.log(dist)
-            const gesture = dist < 30 ? 'pinch' : 'open';
-            debouncedOnGesture(gesture);
+            const gesture = dist < 15 ? 'pinch' : 'open';
             return gesture
         }
-        // setupHandTracking()
+
+        
+        fpsLabel.style.position = 'absolute';
+        fpsLabel.style.top = '10px';
+        fpsLabel.style.right = '10px';
+        fpsLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        fpsLabel.style.color = 'white';
+        fpsLabel.style.padding = '5px';
+        fpsLabel.style.fontSize = '14px';
+        fpsLabel.style.zIndex = '10'; // Ensure it's above other elements
+        document.body.appendChild(fpsLabel);
+
+        function updateFPSLabel(fps) {
+            fpsLabel.innerText = `FPS: ${fps}`;
+        }
+
         setupCamera().then(setupHandTracking())
-    }, [onGesture])
 
-    return <div style={{ position: 'absolute', top: 0, left: 0 }}>
-    <video
-        ref={videoRef}
-        style={{
-            transform: 'scaleX(-1)', // Flip the video horizontally
-            width: '100%',
-            display: 'block',
-            top: 0,
-            left: 0,
-        }}
-    />
-    <canvas
-        ref={canvasRef}
-        style={{
-            position: 'absolute',
-            transform: 'scaleX(-1)',
-            top: 0,
-            left: 0,// Flip the canvas horizontally
-            width: '100%',
-            height: '100%',
-        }}
-    />
-</div>
+        return () => {
+            // Clean up FPS label
+            if (fpsLabel) {
+                fpsLabel.remove();
+            }
+        };
 
+    })
+
+
+    return <div style={{ height: '100vh', position: 'relative', top: 0, left: 0 }}>
+        {/* Container for video and first canvas */}
+        <div style={{ position: 'absolute', width: STREAM_WIDTH, height: STREAM_HEIGHT }}>
+            <video
+                ref={videoRef}
+                style={{
+                    transform: 'scaleX(-1)', // Flip the video horizontally
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: `${STREAM_WIDTH}`,
+                    height: `${STREAM_HEIGHT}`,
+                    zIndex: 1,
+                }}
+            />
+            <canvas
+                ref={canvasRef}
+                style={{
+                    position: 'absolute',
+                    transform: 'scaleX(-1)', // Flip the canvas horizontally
+                    top: 0,
+                    left: 0,
+                    width: `${STREAM_WIDTH}`,
+                    height: `${STREAM_HEIGHT}`,
+                    zIndex: 2, // Ensures it overlays on top of the video
+                }}
+            />
+        </div>
+
+        {/* Second canvas to the right of the video */}
+        <canvas
+            ref={threejsCavnasRef}
+            style={{
+                position: "absolute", // Changed to relative for flexbox positioning
+                left: STREAM_WIDTH, // No need for additional left offset, flexbox handles this
+                top: 0,
+                height: '100%',
+            }}
+        />
+    </div>
 }
 
 export default HandTracker;
