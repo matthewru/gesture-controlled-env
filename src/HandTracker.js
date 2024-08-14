@@ -4,6 +4,8 @@ import '@tensorflow/tfjs-backend-webgl';
 import * as tfjsWasm from '@tensorflow/tfjs-backend-wasm';
 import * as handpose from '@tensorflow-models/handpose'
 import * as THREE from 'three';
+import * as fp from 'fingerpose'
+
 
 tfjsWasm.setWasmPaths(
     `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${
@@ -15,6 +17,7 @@ function HandTracker() {
     const canvasRef = useRef(null);
     const threejsCavnasRef = useRef(null);
     const sceneRef = useRef(null);
+    const currentGestureRef = useRef(null)
 
     const STREAM_WIDTH = 320;
     const STREAM_HEIGHT = 240
@@ -23,6 +26,7 @@ function HandTracker() {
 
     const smoothingInterpolation = (start, end, smoothingFactor) => (start + (end - start) * smoothingFactor)
     const SMOOTHING_FACTOR = 0.1
+    const GESTURE_DELAY = 300
 
 
     useEffect(() => {
@@ -44,6 +48,46 @@ function HandTracker() {
             }
 
             return fps;
+        }
+
+
+        function setGesture(estimatedGestures) {
+            setTimeout(() => {
+                if (estimatedGestures["gestures"].length > 0)
+                {
+                    const gesture = estimatedGestures["gestures"][0]["name"]
+                    const confidenceScore = estimatedGestures["gestures"][0]["score"]
+                    if (gesture === "grab" && confidenceScore >= 5.5)
+                    {
+                        currentGestureRef.current = "grab";
+                    }
+                    else if (gesture === "pan" && confidenceScore >= 9)
+                    {
+                        currentGestureRef.current = "pan";
+                    }
+                }
+                
+            }, GESTURE_DELAY)
+        }
+
+        function initGrabGesture() {
+            const grabGesture = new fp.GestureDescription('grab');
+
+            [fp.Finger.Thumb, fp.Finger.Index, fp.Finger.Middle, fp.Finger.Ring, fp.Finger.Pinky].forEach(finger => {
+                grabGesture.addCurl(finger, fp.FingerCurl.HalfCurl, 1);
+            }) 
+
+            return grabGesture
+        }
+
+        function initPanGesture() {
+            const panGesture = new fp.GestureDescription('pan');
+
+            [fp.Finger.Thumb, fp.Finger.Index, fp.Finger.Middle, fp.Finger.Ring, fp.Finger.Pinky].forEach(finger => {
+                panGesture.addCurl(finger, fp.FingerCurl.NoCurl, 1);
+            }) 
+
+            return panGesture
         }
 
         // access webcam stream
@@ -94,6 +138,12 @@ function HandTracker() {
                 videoRef.current.width = STREAM_WIDTH
                 videoRef.current.height = STREAM_HEIGHT
                 const model = await handpose.load();
+                const grabGesture = initGrabGesture()
+                const panGesture = initPanGesture()
+                const GE = new fp.GestureEstimator([
+                    grabGesture,
+                    panGesture
+                ])
                 setInterval(async () => {
                     if (videoRef.current) {
                         try {
@@ -105,19 +155,18 @@ function HandTracker() {
                                 drawLandmarks(ctx, keypoints)
                                 drawConnections(ctx, keypoints)
                                 const [idxTipX, idxTipY, idxTipZ] = keypoints[8]
-
+                                const estimatedGestures = GE.estimate(keypoints, 8.5);
                                 const ndcX = (idxTipX / videoRef.current.videoWidth) * 2 - 1;
                                 const ndcY = -(idxTipY / videoRef.current.videoHeight) * 2 + 1;
                                 // const ndcZ = (idxTipY / videoRef.current.videoHeight) * 2 + 1;
-
-                                const currentGesture = detectGesture(keypoints)
-
-                                if (currentGesture === "open")
+                                setGesture(estimatedGestures)
+                                console.log(currentGestureRef.current)
+                                if (currentGestureRef.current === "pan")
                                 {
                                     cube.position.x = smoothingInterpolation(cube.position.x, ndcX * -8, SMOOTHING_FACTOR);
                                     cube.position.y = smoothingInterpolation(cube.position.y, ndcY * 8, SMOOTHING_FACTOR);
                                 }
-                                else if (currentGesture === "pinch")
+                                else if (currentGestureRef.current === "grab")
                                 {
                                     cube.rotation.x = smoothingInterpolation(cube.rotation.x, -1 * ndcY * Math.PI, SMOOTHING_FACTOR)
                                     cube.rotation.y = smoothingInterpolation(cube.rotation.y, -1 * ndcX * Math.PI, SMOOTHING_FACTOR)
