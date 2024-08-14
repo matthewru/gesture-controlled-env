@@ -50,6 +50,16 @@ function HandTracker() {
             return fps;
         }
 
+        function getCenterOfPalm(keypoints)
+        {
+            let x = 0, y = 0
+            const palmLandmarks = [5, 9, 13, 17, 1, 0]
+            palmLandmarks.forEach(landmark => {
+                x += keypoints[landmark][0]
+                y += keypoints[landmark][1]
+            })
+            return [x/6, y/6]
+        }
 
         function setGesture(estimatedGestures) {
             setTimeout(() => {
@@ -154,10 +164,10 @@ function HandTracker() {
                                 const keypoints = predictions[0].landmarks;
                                 drawLandmarks(ctx, keypoints)
                                 drawConnections(ctx, keypoints)
-                                const [idxTipX, idxTipY, idxTipZ] = keypoints[8]
+                                const [centerX, centerY] = getCenterOfPalm(keypoints)
                                 const estimatedGestures = GE.estimate(keypoints, 8.5);
-                                const ndcX = (idxTipX / videoRef.current.videoWidth) * 2 - 1;
-                                const ndcY = -(idxTipY / videoRef.current.videoHeight) * 2 + 1;
+                                const ndcX = (centerX / videoRef.current.videoWidth) * 2 - 1;
+                                const ndcY = -(centerY / videoRef.current.videoHeight) * 2 + 1;
                                 // const ndcZ = (idxTipY / videoRef.current.videoHeight) * 2 + 1;
                                 setGesture(estimatedGestures)
                                 console.log(currentGestureRef.current)
