@@ -21,6 +21,9 @@ function HandTracker() {
 
     const FRAME_LIMIT = 60;
 
+    const smoothingInterpolation = (start, end, smoothingFactor) => (start + (end - start) * smoothingFactor)
+    const SMOOTHING_FACTOR = 0.1
+
 
     useEffect(() => {
 
@@ -57,8 +60,8 @@ function HandTracker() {
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, (window.innerWidth - STREAM_WIDTH) / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ canvas: threejsCavnasRef.current });
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        // renderer.shadowMap.enabled = true;
+        // renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.setSize(window.innerWidth - STREAM_WIDTH, window.innerHeight);
         camera.position.z = 5;
         sceneRef.current = scene;
@@ -107,8 +110,18 @@ function HandTracker() {
                                 const ndcY = -(idxTipY / videoRef.current.videoHeight) * 2 + 1;
                                 // const ndcZ = (idxTipY / videoRef.current.videoHeight) * 2 + 1;
 
-                                cube.position.x = ndcX * -8;
-                                cube.position.y = ndcY * 8;
+                                const currentGesture = detectGesture(keypoints)
+
+                                if (currentGesture === "open")
+                                {
+                                    cube.position.x = smoothingInterpolation(cube.position.x, ndcX * -8, SMOOTHING_FACTOR);
+                                    cube.position.y = smoothingInterpolation(cube.position.y, ndcY * 8, SMOOTHING_FACTOR);
+                                }
+                                else if (currentGesture === "pinch")
+                                {
+                                    cube.rotation.x = smoothingInterpolation(cube.rotation.x, -1 * ndcY * Math.PI, SMOOTHING_FACTOR)
+                                    cube.rotation.y = smoothingInterpolation(cube.rotation.y, -1 * ndcX * Math.PI, SMOOTHING_FACTOR)
+                                }
                                 // cube.position.z = ndcZ * -4;
                                 // console.log(detectGesture(keypoints))
                             }
@@ -162,7 +175,7 @@ function HandTracker() {
                 Math.pow(thumbTip[0] - indextTip[0], 2) +
                 Math.pow(thumbTip[1] - indextTip[1], 2) + 
                 Math.pow(thumbTip[2] - indextTip[2], 2))
-            const gesture = dist < 15 ? 'pinch' : 'open';
+            const gesture = dist < 100 ? 'pinch' : 'open';
             return gesture
         }
 
