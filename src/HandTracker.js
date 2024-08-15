@@ -5,7 +5,6 @@ import * as tfjsWasm from '@tensorflow/tfjs-backend-wasm';
 import * as handpose from '@tensorflow-models/handpose'
 import * as THREE from 'three';
 import * as fp from 'fingerpose'
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 
 
@@ -28,9 +27,10 @@ function HandTracker() {
     const FRAME_LIMIT = 60;
 
     const smoothingInterpolation = (start, end, smoothingFactor) => (start + (end - start) * smoothingFactor)
-    const SMOOTHING_FACTOR = 0.1
-    const GESTURE_DELAY = 300
-
+    const SMOOTHING_FACTOR = 0.02
+    const GESTURE_DELAY = 500
+    const SCALE_SENSITIVITY = 0.5
+    const ROTATION_SENSITIVITY = 0.1
 
     useEffect(() => {
 
@@ -75,9 +75,13 @@ function HandTracker() {
                     {
                         currentGestureRef.current = "grab";
                     }
-                    else if (gesture === "pan" && confidenceScore >= 9)
+                    else if (gesture === "pan" && confidenceScore >= 9.25)
                     {
                         currentGestureRef.current = "pan";
+                    }
+                    else if (gesture === "scale" && confidenceScore >= 9.75)
+                    {
+                        // currentGestureRef.current = "scale";
                     }
                 }
                 
@@ -102,6 +106,17 @@ function HandTracker() {
             }) 
 
             return panGesture
+        }
+
+        function initScaleGesture() {
+            const scaleGesture = new fp.GestureDescription('scale');
+
+            [fp.Finger.Index, fp.Finger.Middle, fp.Finger.Ring, fp.Finger.Pinky].forEach(finger => {
+                scaleGesture.addCurl(finger, fp.FingerCurl.FullCurl, 1);
+            }) 
+            scaleGesture.addCurl(fp.Finger.Thumb, fp.FingerCurl.HalfCurl, 1)
+
+            return scaleGesture
         }
 
         // access webcam stream
@@ -165,6 +180,12 @@ function HandTracker() {
 
         animate()
 
+        let lastRotation = new THREE.Vector3()
+        let lastScale = new THREE.Vector3()
+        let lastPosition = new THREE.Vector3()
+        let lastPalm = [0, 0, 0]
+
+
         async function setupHandTracking() {
             try {
                 const canvas = canvasRef.current;
@@ -176,9 +197,11 @@ function HandTracker() {
                 const model = await handpose.load();
                 const grabGesture = initGrabGesture()
                 const panGesture = initPanGesture()
+                const scaleGesture = initScaleGesture()
                 const GE = new fp.GestureEstimator([
                     grabGesture,
-                    panGesture
+                    panGesture,
+                    scaleGesture
                 ])
                 setInterval(async () => {
                     if (videoRef.current) {
@@ -190,23 +213,40 @@ function HandTracker() {
                                 const keypoints = predictions[0].landmarks;
                                 drawLandmarks(ctx, keypoints)
                                 drawConnections(ctx, keypoints)
+
                                 const [centerX, centerY, centerZ] = getCenterOfPalm(keypoints)
+                                const difference = [centerX - lastPalm[0], centerY - lastPalm[1], centerZ - lastPalm[2]]
+                                lastPalm = [centerX, centerY, centerZ]
                                 const estimatedGestures = GE.estimate(keypoints, 8.5);
-                                const ndcX = (centerX / videoRef.current.videoWidth) * 2 - 1;
-                                const ndcY = -(centerY / videoRef.current.videoHeight) * 2 + 1;
+                                const ndcX = difference[0]
+                                const ndcY = -difference[1]
+                                // const ndcX = (difference[0] / videoRef.current.videoWidth) * 2 - 1;
+                                // const ndcY = -(difference[1] / videoRef.current.videoHeight) * 2 + 1;
                                 // const ndcZ = (centerZ / videoRef.current.videoHeight) * 2 + 1;
                                 setGesture(estimatedGestures)
                                 if (currentGestureRef.current === "pan")
                                 {
-                                    currentModel.position.x = smoothingInterpolation(currentModel.position.x, ndcX * -8, SMOOTHING_FACTOR);
-                                    currentModel.position.y = smoothingInterpolation(currentModel.position.y, ndcY * 8, SMOOTHING_FACTOR);
+                                    const newPosX = currentModel.position.x - ndcX
+                                    const newPosY = currentModel.position.y + ndcY
+                                    currentModel.position.x = smoothingInterpolation(currentModel.position.x, newPosX, SMOOTHING_FACTOR);
+                                    currentModel.position.y = smoothingInterpolation(currentModel.position.y, newPosY, SMOOTHING_FACTOR);
+                                    lastPosition = currentModel.position
                                     // currentModel.position.z = smoothingInterpolation(currentModel.position.z, ndcZ * 8, SMOOTHING_FACTOR);
                                 }
                                 else if (currentGestureRef.current === "grab")
                                 {
-                                    currentModel.rotation.x = smoothingInterpolation(currentModel.rotation.x, -1 * ndcY * Math.PI, SMOOTHING_FACTOR)
-                                    currentModel.rotation.y = smoothingInterpolation(currentModel.rotation.y, -1 * ndcX * Math.PI, SMOOTHING_FACTOR)
+                                    // current
+                                    const newRotationX = currentModel.rotation.x + -ndcY * Math.PI * ROTATION_SENSITIVITY
+                                    const newRotationY = currentModel.rotation.y + -ndcX * Math.PI * ROTATION_SENSITIVITY
+                                    currentModel.rotation.x = smoothingInterpolation(currentModel.rotation.x, newRotationX, SMOOTHING_FACTOR)
+                                    currentModel.rotation.y = smoothingInterpolation(currentModel.rotation.y, newRotationY, SMOOTHING_FACTOR)
                                 }
+                                else if (currentGestureRef.current === "scale")
+                                {
+                                    const scaleFactor = smoothingInterpolation(currentModel.scale.y, ndcY * SCALE_SENSITIVITY, SMOOTHING_FACTOR)
+                                    currentModel.scale.set(scaleFactor, scaleFactor, scaleFactor)
+                                }
+
                                 // console.log(currentModel.scale)
                                 // cube.position.z = ndcZ * -4;
                                 // console.log(detectGesture(keypoints))
