@@ -5,6 +5,9 @@ import * as tfjsWasm from '@tensorflow/tfjs-backend-wasm';
 import * as handpose from '@tensorflow-models/handpose'
 import * as THREE from 'three';
 import * as fp from 'fingerpose'
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
+
 
 
 tfjsWasm.setWasmPaths(
@@ -52,13 +55,14 @@ function HandTracker() {
 
         function getCenterOfPalm(keypoints)
         {
-            let x = 0, y = 0
+            let x = 0, y = 0, z = 0
             const palmLandmarks = [5, 9, 13, 17, 1, 0]
             palmLandmarks.forEach(landmark => {
                 x += keypoints[landmark][0]
                 y += keypoints[landmark][1]
+                z += keypoints[landmark][2]
             })
-            return [x/6, y/6]
+            return [x/6, y/6, z/6]
         }
 
         function setGesture(estimatedGestures) {
@@ -110,7 +114,7 @@ function HandTracker() {
                 video.play();
             }
         }
-
+        const loader = new OBJLoader();
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, (window.innerWidth - STREAM_WIDTH) / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ canvas: threejsCavnasRef.current });
@@ -119,14 +123,37 @@ function HandTracker() {
         renderer.setSize(window.innerWidth - STREAM_WIDTH, window.innerHeight);
         camera.position.z = 5;
         sceneRef.current = scene;
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(0, 1, 2).normalize();
+        scene.add(light);
 
         // Add a basic cube
         const geometry = new THREE.BoxGeometry();
         const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
         const cube = new THREE.Mesh(geometry, material);
-        scene.add(cube);
-
-
+        // scene.add(cube);
+        let currentModel = cube
+        loader.load(
+            'models/ambulance.obj',
+            (obj) => {
+                currentModel = obj
+                currentModel.scale.set(0.01, 0.01, 0.01)
+                console.log("added")
+                obj.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.side = THREE.DoubleSide; // Ensure both sides are rendered
+                    }
+                });
+                console.log(currentModel.position)
+                scene.add(currentModel)
+            }, (xhr) => {
+                console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+            },
+            (error) => {
+                console.error('An error happened while loading the model', error);
+            }
+        )
+        // scene.add(currentModel)
 
         function animate() {
             requestAnimationFrame(animate);
@@ -134,7 +161,6 @@ function HandTracker() {
             fps = calculateFPS()
             renderer.render(scene, camera);
             updateFPSLabel(fps)
-
         }
 
         animate()
@@ -164,23 +190,24 @@ function HandTracker() {
                                 const keypoints = predictions[0].landmarks;
                                 drawLandmarks(ctx, keypoints)
                                 drawConnections(ctx, keypoints)
-                                const [centerX, centerY] = getCenterOfPalm(keypoints)
+                                const [centerX, centerY, centerZ] = getCenterOfPalm(keypoints)
                                 const estimatedGestures = GE.estimate(keypoints, 8.5);
                                 const ndcX = (centerX / videoRef.current.videoWidth) * 2 - 1;
                                 const ndcY = -(centerY / videoRef.current.videoHeight) * 2 + 1;
-                                // const ndcZ = (idxTipY / videoRef.current.videoHeight) * 2 + 1;
+                                // const ndcZ = (centerZ / videoRef.current.videoHeight) * 2 + 1;
                                 setGesture(estimatedGestures)
-                                console.log(currentGestureRef.current)
                                 if (currentGestureRef.current === "pan")
                                 {
-                                    cube.position.x = smoothingInterpolation(cube.position.x, ndcX * -8, SMOOTHING_FACTOR);
-                                    cube.position.y = smoothingInterpolation(cube.position.y, ndcY * 8, SMOOTHING_FACTOR);
+                                    currentModel.position.x = smoothingInterpolation(currentModel.position.x, ndcX * -8, SMOOTHING_FACTOR);
+                                    currentModel.position.y = smoothingInterpolation(currentModel.position.y, ndcY * 8, SMOOTHING_FACTOR);
+                                    // currentModel.position.z = smoothingInterpolation(currentModel.position.z, ndcZ * 8, SMOOTHING_FACTOR);
                                 }
                                 else if (currentGestureRef.current === "grab")
                                 {
-                                    cube.rotation.x = smoothingInterpolation(cube.rotation.x, -1 * ndcY * Math.PI, SMOOTHING_FACTOR)
-                                    cube.rotation.y = smoothingInterpolation(cube.rotation.y, -1 * ndcX * Math.PI, SMOOTHING_FACTOR)
+                                    currentModel.rotation.x = smoothingInterpolation(currentModel.rotation.x, -1 * ndcY * Math.PI, SMOOTHING_FACTOR)
+                                    currentModel.rotation.y = smoothingInterpolation(currentModel.rotation.y, -1 * ndcX * Math.PI, SMOOTHING_FACTOR)
                                 }
+                                // console.log(currentModel.scale)
                                 // cube.position.z = ndcZ * -4;
                                 // console.log(detectGesture(keypoints))
                             }
