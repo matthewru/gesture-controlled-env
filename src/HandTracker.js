@@ -13,31 +13,98 @@ tfjsWasm.setWasmPaths(
     `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${
         tfjsWasm.version_wasm}/dist/`);
 
+const STREAM_WIDTH = 320;
+const STREAM_HEIGHT = 240
+
+let showLandmarks = true
+let showFPS = true
+
+function ControlPanel() {
+    const toggleLandmarks = () => {
+        showLandmarks = !showLandmarks
+        const landmarksInput = document.getElementById('landmarks')
+        landmarksInput.checked = showLandmarks
+    }
+
+    const getShowLandmarks = () => {
+        return showLandmarks
+    }
+
+    return (
+        <div style={{ position: 'absolute', width: STREAM_WIDTH, height: `calc(100% - ${STREAM_HEIGHT}px)`, top: STREAM_HEIGHT, color: 'white', backgroundColor: 'rgba(0, 0, 0, 0.5)' }}>
+            <h2>Control Panel</h2>
+            <p>Change settings:</p>
+            <div>
+                <label style={{ display: 'block', marginBottom: '10px' }}>
+                    <input
+                    type="checkbox"
+                    name="fps_label"
+                    // checked={showFPS}
+                    // onChange={showFPS = !showFPS}
+                    style={{ marginRight: '8px' }}
+                    />
+                    FPS Label
+                </label>
+                <label style={{ display: 'block', marginBottom: '10px' }}>
+                    <input
+                    type="checkbox"
+                    name="landmarks"
+                    id="landmarks"
+                    checked={getShowLandmarks()}
+                    onChange={toggleLandmarks}
+                    style={{ marginRight: '8px' }}
+                    />
+                    Show Hand Landmarks
+                </label>
+                <label style={{ display: 'block', marginBottom: '10px' }}>
+                    <input
+                    type="checkbox"
+                    name="pause_detection"
+                    style={{ marginRight: '8px' }}
+                    />
+                    Stop Gesture Detection
+                </label>
+            </div>
+        </div>
+    );
+}
+
+
 function HandTracker() {
-    const fpsLabel = document.createElement('div');
+
+    
     const videoRef = useRef(null)
     const canvasRef = useRef(null);
     const threejsCavnasRef = useRef(null);
     const sceneRef = useRef(null);
-    const currentGestureRef = useRef(null)
+    const currentGestureRef = useRef(null)  
 
-    const STREAM_WIDTH = 320;
-    const STREAM_HEIGHT = 240
 
-    const FRAME_LIMIT = 60;
 
     const smoothingInterpolation = (start, end, smoothingFactor) => (start + (end - start) * smoothingFactor)
     const SMOOTHING_FACTOR = 0.02
     const GESTURE_DELAY = 500
-    const SCALE_SENSITIVITY = 0.5
-    const ROTATION_SENSITIVITY = 0.1
+    const SCALE_SENSITIVITY = 0.01
+    const ROTATION_SENSITIVITY = 0.3
 
     useEffect(() => {
 
         let lastFrameTime = performance.now();
         let frameCount = 0;
         let fps = 0;
-        const frameInterval = 1000/FRAME_LIMIT
+        const fpsLabel = document.createElement('div');
+        function initFPSLabel() {
+            fpsLabel.style.position = 'absolute';
+            fpsLabel.style.top = '10px';
+            fpsLabel.style.right = '10px';
+            fpsLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+            fpsLabel.style.color = 'white';
+            fpsLabel.style.padding = '5px';
+            fpsLabel.style.fontSize = '14px';
+            fpsLabel.style.zIndex = '10'; // Ensure it's above other elements
+            document.body.appendChild(fpsLabel);
+        }
+
 
         function calculateFPS() {
             const now = performance.now();
@@ -71,17 +138,21 @@ function HandTracker() {
                 {
                     const gesture = estimatedGestures["gestures"][0]["name"]
                     const confidenceScore = estimatedGestures["gestures"][0]["score"]
-                    if (gesture === "grab" && confidenceScore >= 5.5)
+                    if (gesture === "grab" && confidenceScore >= 9.25)
                     {
-                        currentGestureRef.current = "grab";
+                        // currentGestureRef.current = "grab";
                     }
                     else if (gesture === "pan" && confidenceScore >= 9.25)
                     {
-                        currentGestureRef.current = "pan";
+                        currentGestureRef.current = "grab";
                     }
                     else if (gesture === "scale" && confidenceScore >= 9.75)
                     {
-                        // currentGestureRef.current = "scale";
+                        currentGestureRef.current = "scale";
+                    }
+                    else
+                    {
+                        currentGestureRef.current = null
                     }
                 }
                 
@@ -129,6 +200,8 @@ function HandTracker() {
                 video.play();
             }
         }
+
+
         const loader = new OBJLoader();
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, (window.innerWidth - STREAM_WIDTH) / window.innerHeight, 0.1, 1000);
@@ -157,9 +230,9 @@ function HandTracker() {
                 obj.traverse((child) => {
                     if (child.isMesh) {
                         child.material.side = THREE.DoubleSide; // Ensure both sides are rendered
-                    }
+                    } 
                 });
-                console.log(currentModel.position)
+                console.log(currentModel.position)   
                 scene.add(currentModel)
             }, (xhr) => {
                 console.log((xhr.loaded / xhr.total * 100) + '% loaded');
@@ -170,19 +243,18 @@ function HandTracker() {
         )
         // scene.add(currentModel)
 
+        initFPSLabel()
+
         function animate() {
             requestAnimationFrame(animate);
 
-            fps = calculateFPS()
+            fps = calculateFPS()  
             renderer.render(scene, camera);
             updateFPSLabel(fps)
         }
 
         animate()
 
-        let lastRotation = new THREE.Vector3()
-        let lastScale = new THREE.Vector3()
-        let lastPosition = new THREE.Vector3()
         let lastPalm = [0, 0, 0]
 
 
@@ -211,18 +283,17 @@ function HandTracker() {
                             if (predictions.length > 0)
                             {
                                 const keypoints = predictions[0].landmarks;
-                                drawLandmarks(ctx, keypoints)
-                                drawConnections(ctx, keypoints)
-
+                                if (showLandmarks)
+                                {
+                                    drawLandmarks(ctx, keypoints)
+                                    drawConnections(ctx, keypoints)
+                                }
                                 const [centerX, centerY, centerZ] = getCenterOfPalm(keypoints)
                                 const difference = [centerX - lastPalm[0], centerY - lastPalm[1], centerZ - lastPalm[2]]
                                 lastPalm = [centerX, centerY, centerZ]
                                 const estimatedGestures = GE.estimate(keypoints, 8.5);
                                 const ndcX = difference[0]
                                 const ndcY = -difference[1]
-                                // const ndcX = (difference[0] / videoRef.current.videoWidth) * 2 - 1;
-                                // const ndcY = -(difference[1] / videoRef.current.videoHeight) * 2 + 1;
-                                // const ndcZ = (centerZ / videoRef.current.videoHeight) * 2 + 1;
                                 setGesture(estimatedGestures)
                                 if (currentGestureRef.current === "pan")
                                 {
@@ -230,8 +301,6 @@ function HandTracker() {
                                     const newPosY = currentModel.position.y + ndcY
                                     currentModel.position.x = smoothingInterpolation(currentModel.position.x, newPosX, SMOOTHING_FACTOR);
                                     currentModel.position.y = smoothingInterpolation(currentModel.position.y, newPosY, SMOOTHING_FACTOR);
-                                    lastPosition = currentModel.position
-                                    // currentModel.position.z = smoothingInterpolation(currentModel.position.z, ndcZ * 8, SMOOTHING_FACTOR);
                                 }
                                 else if (currentGestureRef.current === "grab")
                                 {
@@ -243,7 +312,8 @@ function HandTracker() {
                                 }
                                 else if (currentGestureRef.current === "scale")
                                 {
-                                    const scaleFactor = smoothingInterpolation(currentModel.scale.y, ndcY * SCALE_SENSITIVITY, SMOOTHING_FACTOR)
+                                    const scaleFactor = smoothingInterpolation(currentModel.scale.y, currentModel.scale.y + ndcY * SCALE_SENSITIVITY, SMOOTHING_FACTOR)
+                                    if (scaleFactor > 0)
                                     currentModel.scale.set(scaleFactor, scaleFactor, scaleFactor)
                                 }
 
@@ -290,31 +360,8 @@ function HandTracker() {
             })
         }
 
-        function detectGesture(keypoints) {
-            if (keypoints.length === 0)
-            {
-                return null
-            }
-            const thumbTip = keypoints[4];
-            const indextTip = keypoints[8];
-            const dist = Math.sqrt(
-                Math.pow(thumbTip[0] - indextTip[0], 2) +
-                Math.pow(thumbTip[1] - indextTip[1], 2) + 
-                Math.pow(thumbTip[2] - indextTip[2], 2))
-            const gesture = dist < 100 ? 'pinch' : 'open';
-            return gesture
-        }
-
         
-        fpsLabel.style.position = 'absolute';
-        fpsLabel.style.top = '10px';
-        fpsLabel.style.right = '10px';
-        fpsLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        fpsLabel.style.color = 'white';
-        fpsLabel.style.padding = '5px';
-        fpsLabel.style.fontSize = '14px';
-        fpsLabel.style.zIndex = '10'; // Ensure it's above other elements
-        document.body.appendChild(fpsLabel);
+        
 
         function updateFPSLabel(fps) {
             fpsLabel.innerText = `FPS: ${fps}`;
@@ -365,12 +412,13 @@ function HandTracker() {
         <canvas
             ref={threejsCavnasRef}
             style={{
-                position: "absolute", // Changed to relative for flexbox positioning
-                left: STREAM_WIDTH, // No need for additional left offset, flexbox handles this
+                position: "absolute", 
+                left: STREAM_WIDTH, 
                 top: 0,
                 height: '100%',
             }}
         />
+        <ControlPanel/>
     </div>
 }
 
