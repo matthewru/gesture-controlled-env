@@ -18,16 +18,46 @@ const STREAM_HEIGHT = 240
 
 let showLandmarks = true
 let showFPS = true
+let pauseDetection = false
 
 function ControlPanel() {
     const toggleLandmarks = () => {
         showLandmarks = !showLandmarks
+        const label = document.getElementById('landmarkLabel')
         const landmarksInput = document.getElementById('landmarks')
-        landmarksInput.checked = showLandmarks
+        label.removeChild(landmarksInput)
+        const newLandmarkInput = document.createElement('input')
+        newLandmarkInput.type = 'checkbox'
+        newLandmarkInput.checked = showLandmarks
+        newLandmarkInput.onchange = function() {toggleLandmarks()}
+        newLandmarkInput.id = 'landmarks'
+        label.insertBefore(newLandmarkInput, label.firstChild)
     }
 
-    const getShowLandmarks = () => {
-        return showLandmarks
+    const toggleFPSLabel = () => {
+        showFPS = !showFPS
+        const label = document.getElementById('fpsLabel')
+        const fpsInput = document.getElementById('fps_label')
+        label.removeChild(fpsInput)
+        const newFPSInput = document.createElement('input')
+        newFPSInput.type = 'checkbox'
+        newFPSInput.checked = showFPS
+        newFPSInput.onchange = function() {toggleFPSLabel()}
+        newFPSInput.id = 'fps_label'
+        label.insertBefore(newFPSInput, label.firstChild)
+    }
+
+    const toggleDetection = () => {
+        pauseDetection = !pauseDetection
+        const label = document.getElementById('detectionLabel')
+        const detectionInput = document.getElementById('pause_detection')
+        label.removeChild(detectionInput)
+        const newDetectionInput = document.createElement('input')
+        newDetectionInput.type = 'checkbox'
+        newDetectionInput.checked = pauseDetection
+        newDetectionInput.onchange = function() {toggleDetection()}
+        newDetectionInput.id = 'pause_detection'
+        label.insertBefore(newDetectionInput, label.firstChild)
     }
 
     return (
@@ -35,31 +65,35 @@ function ControlPanel() {
             <h2>Control Panel</h2>
             <p>Change settings:</p>
             <div>
-                <label style={{ display: 'block', marginBottom: '10px' }}>
+                <label id= "fpsLabel" style={{ display: 'block', marginBottom: '10px' }}>
                     <input
                     type="checkbox"
                     name="fps_label"
-                    // checked={showFPS}
-                    // onChange={showFPS = !showFPS}
+                    id="fps_label"
+                    checked={showFPS}
+                    onChange={toggleFPSLabel}
                     style={{ marginRight: '8px' }}
                     />
                     FPS Label
                 </label>
-                <label style={{ display: 'block', marginBottom: '10px' }}>
+                <label id= "landmarkLabel" style={{ display: 'block', marginBottom: '10px' }}>
                     <input
                     type="checkbox"
                     name="landmarks"
                     id="landmarks"
-                    checked={getShowLandmarks()}
+                    checked={showLandmarks}
                     onChange={toggleLandmarks}
                     style={{ marginRight: '8px' }}
                     />
                     Show Hand Landmarks
                 </label>
-                <label style={{ display: 'block', marginBottom: '10px' }}>
+                <label id= "detectionLabel" style={{ display: 'block', marginBottom: '10px' }}>
                     <input
                     type="checkbox"
                     name="pause_detection"
+                    id="pause_detection"
+                    checked={pauseDetection}
+                    onChange={toggleDetection}
                     style={{ marginRight: '8px' }}
                     />
                     Stop Gesture Detection
@@ -93,6 +127,7 @@ function HandTracker() {
         let frameCount = 0;
         let fps = 0;
         const fpsLabel = document.createElement('div');
+
         function initFPSLabel() {
             fpsLabel.style.position = 'absolute';
             fpsLabel.style.top = '10px';
@@ -206,8 +241,6 @@ function HandTracker() {
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(75, (window.innerWidth - STREAM_WIDTH) / window.innerHeight, 0.1, 1000);
         const renderer = new THREE.WebGLRenderer({ canvas: threejsCavnasRef.current });
-        // renderer.shadowMap.enabled = true;
-        // renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         renderer.setSize(window.innerWidth - STREAM_WIDTH, window.innerHeight);
         camera.position.z = 5;
         sceneRef.current = scene;
@@ -276,6 +309,15 @@ function HandTracker() {
                     scaleGesture
                 ])
                 setInterval(async () => {
+
+                    if (!showFPS)
+                    {
+                        fpsLabel.style.visibility = 'hidden'
+                    }
+                    else
+                    {
+                        fpsLabel.style.visibility = 'visible'
+                    }
                     if (videoRef.current) {
                         try {
                             const predictions = await model.estimateHands(videoRef.current)
@@ -295,28 +337,30 @@ function HandTracker() {
                                 const ndcX = difference[0]
                                 const ndcY = -difference[1]
                                 setGesture(estimatedGestures)
-                                if (currentGestureRef.current === "pan")
+                                if (!pauseDetection)
                                 {
-                                    const newPosX = currentModel.position.x - ndcX
-                                    const newPosY = currentModel.position.y + ndcY
-                                    currentModel.position.x = smoothingInterpolation(currentModel.position.x, newPosX, SMOOTHING_FACTOR);
-                                    currentModel.position.y = smoothingInterpolation(currentModel.position.y, newPosY, SMOOTHING_FACTOR);
+                                    if (currentGestureRef.current === "pan")
+                                    {
+                                        const newPosX = currentModel.position.x - ndcX
+                                        const newPosY = currentModel.position.y + ndcY
+                                        currentModel.position.x = smoothingInterpolation(currentModel.position.x, newPosX, SMOOTHING_FACTOR);
+                                        currentModel.position.y = smoothingInterpolation(currentModel.position.y, newPosY, SMOOTHING_FACTOR);
+                                    }
+                                    else if (currentGestureRef.current === "grab")
+                                    {
+                                        // current
+                                        const newRotationX = currentModel.rotation.x + -ndcY * Math.PI * ROTATION_SENSITIVITY
+                                        const newRotationY = currentModel.rotation.y + -ndcX * Math.PI * ROTATION_SENSITIVITY
+                                        currentModel.rotation.x = smoothingInterpolation(currentModel.rotation.x, newRotationX, SMOOTHING_FACTOR)
+                                        currentModel.rotation.y = smoothingInterpolation(currentModel.rotation.y, newRotationY, SMOOTHING_FACTOR)
+                                    }
+                                    else if (currentGestureRef.current === "scale")
+                                    {
+                                        const scaleFactor = smoothingInterpolation(currentModel.scale.y, currentModel.scale.y + ndcY * SCALE_SENSITIVITY, SMOOTHING_FACTOR)
+                                        if (scaleFactor > 0)
+                                        currentModel.scale.set(scaleFactor, scaleFactor, scaleFactor)
+                                    }
                                 }
-                                else if (currentGestureRef.current === "grab")
-                                {
-                                    // current
-                                    const newRotationX = currentModel.rotation.x + -ndcY * Math.PI * ROTATION_SENSITIVITY
-                                    const newRotationY = currentModel.rotation.y + -ndcX * Math.PI * ROTATION_SENSITIVITY
-                                    currentModel.rotation.x = smoothingInterpolation(currentModel.rotation.x, newRotationX, SMOOTHING_FACTOR)
-                                    currentModel.rotation.y = smoothingInterpolation(currentModel.rotation.y, newRotationY, SMOOTHING_FACTOR)
-                                }
-                                else if (currentGestureRef.current === "scale")
-                                {
-                                    const scaleFactor = smoothingInterpolation(currentModel.scale.y, currentModel.scale.y + ndcY * SCALE_SENSITIVITY, SMOOTHING_FACTOR)
-                                    if (scaleFactor > 0)
-                                    currentModel.scale.set(scaleFactor, scaleFactor, scaleFactor)
-                                }
-
                                 // console.log(currentModel.scale)
                                 // cube.position.z = ndcZ * -4;
                                 // console.log(detectGesture(keypoints))
