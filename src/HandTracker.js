@@ -39,7 +39,12 @@ function loadModel(URL) {
         (obj) => {
             model = obj.scene
             console.log(model)
-            model.scale.set(0.01, 0.01, 0.01)
+            if (URL === "models/littletokyo.glb")
+                model.scale.set(0.01, 0.01, 0.01)
+            else
+            {
+                model.scale.set(0.3, 0.3, 0.3)
+            }
             scene.add(model)
             currentModel = model
         }, (xhr) => {
@@ -100,6 +105,24 @@ function ControlPanel() {
         }
     }
 
+    const handleSampleDropdown = (event) => {
+        changedFile = true
+        if (event.target.value === "tokyo")
+        {
+            currentModelFileURL = 'models/littletokyo.glb'
+        }
+        else if (event.target.value === "robot")
+        {
+            currentModelFileURL = 'models/warrobot.glb'
+        }
+        else if (event.target.value === "sucrose")
+        {
+            currentModelFileURL = 'models/sucrose_molecule.glb'
+        }
+
+            
+    }
+
     return (
         <div style={{ position: 'absolute', width: STREAM_WIDTH, height: `calc(100% - ${STREAM_HEIGHT}px)`, top: STREAM_HEIGHT, color: 'white', backgroundColor: 'rgba(0, 0, 0, 0.5)' }}>
             <h2>Control Panel</h2>
@@ -145,7 +168,14 @@ function ControlPanel() {
                     accept=".glb"
                     onChange={handleFileUpload}
                     />
-
+                </label>
+                <label>
+                    Select a sample model:
+                    <select onChange={handleSampleDropdown}>
+                        <option value='tokyo'>Little Tokyo</option>
+                        <option value='robot'>War Robot</option>
+                        <option value='sucrose'>Sucrose Molecule</option>
+                    </select>
                 </label>
             </div>
 
@@ -291,11 +321,11 @@ function HandTracker() {
         const renderer = new THREE.WebGLRenderer({ canvas: threejsCavnasRef.current });
         renderer.setSize(window.innerWidth - STREAM_WIDTH, window.innerHeight);
         sceneRef.current = scene;
-        const light = new THREE.DirectionalLight(0xffffff, 1);
+        const light = new THREE.DirectionalLight(0xffffff, 5);
         light.position.set(0, 1, 2).normalize();
         scene.add(light);
         loadModel(currentModelFileURL)
-
+ 
         initFPSLabel()
 
         function animate() {
@@ -333,7 +363,6 @@ function HandTracker() {
                     {
                         scene.remove(currentModel)
                         currentModel = loadModel(currentModelFileURL)
-                        console.log(currentModel)
                         changedFile = false
                     }
 
