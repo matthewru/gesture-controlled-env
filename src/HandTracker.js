@@ -5,7 +5,7 @@ import * as tfjsWasm from '@tensorflow/tfjs-backend-wasm';
 import * as handpose from '@tensorflow-models/handpose'
 import * as THREE from 'three';
 import * as fp from 'fingerpose'
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 
 
@@ -16,9 +16,40 @@ tfjsWasm.setWasmPaths(
 const STREAM_WIDTH = 320;
 const STREAM_HEIGHT = 240
 
+
+const loader = new GLTFLoader();
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, (window.innerWidth - STREAM_WIDTH) / window.innerHeight, 0.1, 1000);
+camera.position.z = 5;
+
+
+let currentModelFileURL = 'models/littletokyo.glb'
+let changedFile = false
+let currentModel = null
+
 let showLandmarks = true
 let showFPS = true
 let pauseDetection = false
+
+function loadModel(URL) {
+    let model = null
+    console.log(URL)
+    loader.load(
+        URL,
+        (obj) => {
+            model = obj.scene
+            console.log(model)
+            model.scale.set(0.01, 0.01, 0.01)
+            scene.add(model)
+            currentModel = model
+        }, (xhr) => {
+            console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+        },
+        (error) => {
+            console.error('An error happened while loading the model', error);
+        }
+    )
+}
 
 function ControlPanel() {
     const toggleLandmarks = () => {
@@ -60,6 +91,15 @@ function ControlPanel() {
         label.insertBefore(newDetectionInput, label.firstChild)
     }
 
+    const handleFileUpload = (event) => {
+        changedFile = true
+        const file = event.target.files[0]
+        if (file)
+        {
+            currentModelFileURL = URL.createObjectURL(file)
+        }
+    }
+
     return (
         <div style={{ position: 'absolute', width: STREAM_WIDTH, height: `calc(100% - ${STREAM_HEIGHT}px)`, top: STREAM_HEIGHT, color: 'white', backgroundColor: 'rgba(0, 0, 0, 0.5)' }}>
             <h2>Control Panel</h2>
@@ -98,7 +138,17 @@ function ControlPanel() {
                     />
                     Stop Gesture Detection
                 </label>
+                <label>
+                    Model Upload (.glb)
+                    <input
+                    type="file"
+                    accept=".glb"
+                    onChange={handleFileUpload}
+                    />
+
+                </label>
             </div>
+
         </div>
     );
 }
@@ -132,11 +182,11 @@ function HandTracker() {
             fpsLabel.style.position = 'absolute';
             fpsLabel.style.top = '10px';
             fpsLabel.style.right = '10px';
-            fpsLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+            fpsLabel.style.backgroundColor = 'rgba( 0, 0, 0, 0.7)';
             fpsLabel.style.color = 'white';
             fpsLabel.style.padding = '5px';
             fpsLabel.style.fontSize = '14px';
-            fpsLabel.style.zIndex = '10'; // Ensure it's above other elements
+            fpsLabel.style.zIndex = '10'; // Ensure it's above other elements 
             document.body.appendChild(fpsLabel);
         }
 
@@ -237,44 +287,14 @@ function HandTracker() {
         }
 
 
-        const loader = new OBJLoader();
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, (window.innerWidth - STREAM_WIDTH) / window.innerHeight, 0.1, 1000);
+
         const renderer = new THREE.WebGLRenderer({ canvas: threejsCavnasRef.current });
         renderer.setSize(window.innerWidth - STREAM_WIDTH, window.innerHeight);
-        camera.position.z = 5;
         sceneRef.current = scene;
         const light = new THREE.DirectionalLight(0xffffff, 1);
         light.position.set(0, 1, 2).normalize();
         scene.add(light);
-
-        // Add a basic cube
-        const geometry = new THREE.BoxGeometry();
-        const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-        const cube = new THREE.Mesh(geometry, material);
-        // scene.add(cube);
-        let currentModel = cube
-        loader.load(
-            'models/ambulance.obj',
-            (obj) => {
-                currentModel = obj
-                currentModel.scale.set(0.01, 0.01, 0.01)
-                console.log("added")
-                obj.traverse((child) => {
-                    if (child.isMesh) {
-                        child.material.side = THREE.DoubleSide; // Ensure both sides are rendered
-                    } 
-                });
-                console.log(currentModel.position)   
-                scene.add(currentModel)
-            }, (xhr) => {
-                console.log((xhr.loaded / xhr.total * 100) + '% loaded');
-            },
-            (error) => {
-                console.error('An error happened while loading the model', error);
-            }
-        )
-        // scene.add(currentModel)
+        loadModel(currentModelFileURL)
 
         initFPSLabel()
 
@@ -309,6 +329,13 @@ function HandTracker() {
                     scaleGesture
                 ])
                 setInterval(async () => {
+                    if (changedFile)
+                    {
+                        scene.remove(currentModel)
+                        currentModel = loadModel(currentModelFileURL)
+                        console.log(currentModel)
+                        changedFile = false
+                    }
 
                     if (!showFPS)
                     {
