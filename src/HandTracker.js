@@ -161,7 +161,7 @@ function ControlPanel() {
                     />
                     Stop Gesture Detection
                 </label>
-                <label>
+                <label style={{ display: 'block', marginBottom: '10px', alignItems: "center" }}>
                     Model Upload (.glb)
                     <input
                     type="file"
@@ -169,7 +169,7 @@ function ControlPanel() {
                     onChange={handleFileUpload}
                     />
                 </label>
-                <label>
+                <label style={{ display: 'block', marginBottom: '10px' }}>
                     Select a sample model:
                     <select onChange={handleSampleDropdown}>
                         <option value='tokyo'>Little Tokyo</option>
@@ -177,6 +177,22 @@ function ControlPanel() {
                         <option value='sucrose'>Sucrose Molecule</option>
                     </select>
                 </label>
+                <div style={{
+                    marginTop: '20px',
+                    padding: '15px',
+                    borderRadius: '8px',
+                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                    color: 'white',
+                    fontSize: '14px',
+                    lineHeight: '1.5',
+                    maxWidth: '100%',
+                    boxSizing: 'border-box'
+                }}>
+                    <h3 style={{ marginBottom: '10px', fontSize: '16px', color: '#FFD700' }}>Instructions</h3>
+                    <p>Use your open hand to the camera to rotate the model in the 3D environment. To scale the model up and down, create a fist like you're punching the sky and move it up and down.</p>
+                    <p>You can upload a 3D model in the .glb format or select a sample model from the dropdown menu to display it in the scene.</p>
+                </div>
+                
             </div>
 
         </div>
