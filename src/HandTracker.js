@@ -8,37 +8,39 @@ import * as fp from 'fingerpose'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 
-
+//  Set tensor flow backend path
 tfjsWasm.setWasmPaths(
     `https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-wasm@${
         tfjsWasm.version_wasm}/dist/`);
 
+
 const STREAM_WIDTH = 320;
 const STREAM_HEIGHT = 240
 
-
+//  Set up three.js scene, adjust scene to camera size
 const loader = new GLTFLoader();
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, (window.innerWidth - STREAM_WIDTH) / window.innerHeight, 0.1, 1000);
 camera.position.z = 5;
 
-
+//  Initialize default model
 let currentModelFileURL = 'models/littletokyo.glb'
 let changedFile = false
 let currentModel = null
 
+//  Initialize default settings
 let showLandmarks = true
 let showFPS = true
 let pauseDetection = false
 
+
+//  Load model based on file URL with the GLTF Loader (only .glb and .gltf files)
 function loadModel(URL) {
     let model = null
-    console.log(URL)
     loader.load(
         URL,
         (obj) => {
             model = obj.scene
-            console.log(model)
             if (URL === "models/littletokyo.glb")
                 model.scale.set(0.01, 0.01, 0.01)
             else
@@ -56,7 +58,10 @@ function loadModel(URL) {
     )
 }
 
+// Initialize the control panel component
 function ControlPanel() {
+
+    //  Handle the hand landmarks settings
     const toggleLandmarks = () => {
         showLandmarks = !showLandmarks
         const label = document.getElementById('landmarkLabel')
@@ -70,6 +75,7 @@ function ControlPanel() {
         label.insertBefore(newLandmarkInput, label.firstChild)
     }
 
+    //  Handle the fps label setting
     const toggleFPSLabel = () => {
         showFPS = !showFPS
         const label = document.getElementById('fpsLabel')
@@ -83,6 +89,7 @@ function ControlPanel() {
         label.insertBefore(newFPSInput, label.firstChild)
     }
 
+    // Handle the pausing hand detection setting
     const toggleDetection = () => {
         pauseDetection = !pauseDetection
         const label = document.getElementById('detectionLabel')
@@ -96,6 +103,7 @@ function ControlPanel() {
         label.insertBefore(newDetectionInput, label.firstChild)
     }
 
+    // Handle the file upload feature
     const handleFileUpload = (event) => {
         changedFile = true
         const file = event.target.files[0]
@@ -105,6 +113,7 @@ function ControlPanel() {
         }
     }
 
+    //  Handle the dropdown for sample files
     const handleSampleDropdown = (event) => {
         changedFile = true
         if (event.target.value === "tokyo")
@@ -119,8 +128,6 @@ function ControlPanel() {
         {
             currentModelFileURL = 'models/sucrose_molecule.glb'
         }
-
-            
     }
 
     return (
@@ -192,9 +199,7 @@ function ControlPanel() {
                     <p>Use your open hand to the camera to rotate the model in the 3D environment. To scale the model up and down, create a fist like you're punching the sky and move it up and down.</p>
                     <p>You can upload a 3D model in the .glb format or select a sample model from the dropdown menu to display it in the scene.</p>
                 </div>
-                
             </div>
-
         </div>
     );
 }
@@ -202,28 +207,29 @@ function ControlPanel() {
 
 function HandTracker() {
 
-    
+    //  Set up React Refs
     const videoRef = useRef(null)
     const canvasRef = useRef(null);
     const threejsCavnasRef = useRef(null);
     const sceneRef = useRef(null);
     const currentGestureRef = useRef(null)  
 
-
-
+    //  Smoothing function to decrease jitter between movements
     const smoothingInterpolation = (start, end, smoothingFactor) => (start + (end - start) * smoothingFactor)
+
+    //  Settings for sensitivity
     const SMOOTHING_FACTOR = 0.02
     const GESTURE_DELAY = 500
     const SCALE_SENSITIVITY = 0.01
     const ROTATION_SENSITIVITY = 0.3
 
     useEffect(() => {
-
         let lastFrameTime = performance.now();
         let frameCount = 0;
         let fps = 0;
         const fpsLabel = document.createElement('div');
 
+        //  Style FPS Label
         function initFPSLabel() {
             fpsLabel.style.position = 'absolute';
             fpsLabel.style.top = '10px';
@@ -236,7 +242,7 @@ function HandTracker() {
             document.body.appendChild(fpsLabel);
         }
 
-
+        //  Calculate the FPS
         function calculateFPS() {
             const now = performance.now();
             const deltaTime = now - lastFrameTime;
@@ -247,10 +253,10 @@ function HandTracker() {
                 frameCount = 0;
                 lastFrameTime = now;
             }
-
             return fps;
         }
 
+        //  Return center of palm using a centroid calculation around outer palm landmarks
         function getCenterOfPalm(keypoints)
         {
             let x = 0, y = 0, z = 0
@@ -263,19 +269,16 @@ function HandTracker() {
             return [x/6, y/6, z/6]
         }
 
+        //  Use fingerpose custom gestures to detect functions. Works on a delay.
         function setGesture(estimatedGestures) {
             setTimeout(() => {
                 if (estimatedGestures["gestures"].length > 0)
                 {
                     const gesture = estimatedGestures["gestures"][0]["name"]
                     const confidenceScore = estimatedGestures["gestures"][0]["score"]
-                    if (gesture === "grab" && confidenceScore >= 9.25)
+                    if (gesture === "rotate" && confidenceScore >= 9.25)
                     {
-                        // currentGestureRef.current = "grab";
-                    }
-                    else if (gesture === "pan" && confidenceScore >= 9.25)
-                    {
-                        currentGestureRef.current = "grab";
+                        currentGestureRef.current = "rotate";
                     }
                     else if (gesture === "scale" && confidenceScore >= 9.75)
                     {
@@ -290,26 +293,18 @@ function HandTracker() {
             }, GESTURE_DELAY)
         }
 
-        function initGrabGesture() {
-            const grabGesture = new fp.GestureDescription('grab');
+        //  Initialize the rotate gesture to open hand using finger pose model
+        function initRotateGesture() {
+            const rotateGesture = new fp.GestureDescription('rotate');
 
             [fp.Finger.Thumb, fp.Finger.Index, fp.Finger.Middle, fp.Finger.Ring, fp.Finger.Pinky].forEach(finger => {
-                grabGesture.addCurl(finger, fp.FingerCurl.HalfCurl, 1);
+                rotateGesture.addCurl(finger, fp.FingerCurl.NoCurl, 1);
             }) 
 
-            return grabGesture
+            return rotateGesture
         }
 
-        function initPanGesture() {
-            const panGesture = new fp.GestureDescription('pan');
-
-            [fp.Finger.Thumb, fp.Finger.Index, fp.Finger.Middle, fp.Finger.Ring, fp.Finger.Pinky].forEach(finger => {
-                panGesture.addCurl(finger, fp.FingerCurl.NoCurl, 1);
-            }) 
-
-            return panGesture
-        }
-
+        //  Initialize the scale gesture to closed fist with finger pose model
         function initScaleGesture() {
             const scaleGesture = new fp.GestureDescription('scale');
 
@@ -321,7 +316,7 @@ function HandTracker() {
             return scaleGesture
         }
 
-        // access webcam stream
+        // Access webcam stream
         async function setupCamera() {
             const video = videoRef.current;
             if (navigator.mediaDevices.getUserMedia) {
@@ -333,7 +328,7 @@ function HandTracker() {
         }
 
 
-
+        //  Finish initializing the three.js scene: renderer, lighting, original scene model
         const renderer = new THREE.WebGLRenderer({ canvas: threejsCavnasRef.current });
         renderer.setSize(window.innerWidth - STREAM_WIDTH, window.innerHeight);
         sceneRef.current = scene;
@@ -344,6 +339,7 @@ function HandTracker() {
  
         initFPSLabel()
 
+        //  Start animation loop
         function animate() {
             requestAnimationFrame(animate);
 
@@ -354,27 +350,36 @@ function HandTracker() {
 
         animate()
 
+        //  Initialize palm at 0,0,0 to calculate position difference
         let lastPalm = [0, 0, 0]
 
-
+        //  Main hand tracking loop
         async function setupHandTracking() {
             try {
+                //  Initialize the canvas on top of the webcam
                 const canvas = canvasRef.current;
                 const ctx = canvas.getContext('2d');
                 canvas.width = STREAM_WIDTH;
                 canvas.height = STREAM_HEIGHT; 
+
+                //  Set video dimensions
                 videoRef.current.width = STREAM_WIDTH
                 videoRef.current.height = STREAM_HEIGHT
+
+                //  Initialize the hand tracking model
                 const model = await handpose.load();
-                const grabGesture = initGrabGesture()
-                const panGesture = initPanGesture()
+
+                // Initialize the functional gestures
+                const rotateGesture = initRotateGesture()
                 const scaleGesture = initScaleGesture()
                 const GE = new fp.GestureEstimator([
-                    grabGesture,
-                    panGesture,
+                    rotateGesture,
                     scaleGesture
                 ])
+
+                //  Main function loop
                 setInterval(async () => {
+                    //  Check for any file and model updates
                     if (changedFile)
                     {
                         scene.remove(currentModel)
@@ -382,6 +387,7 @@ function HandTracker() {
                         changedFile = false
                     }
 
+                    //  Check for the fps visibility setting
                     if (!showFPS)
                     {
                         fpsLabel.style.visibility = 'hidden'
@@ -390,42 +396,56 @@ function HandTracker() {
                     {
                         fpsLabel.style.visibility = 'visible'
                     }
+
                     if (videoRef.current) {
                         try {
+                            //  Get hand landmark positions with the hand pose model
                             const predictions = await model.estimateHands(videoRef.current)
+
+                            //  Clear the canvas for landmarks
                             ctx.clearRect(0, 0, canvas.width, canvas.height);
                             if (predictions.length > 0)
                             {
                                 const keypoints = predictions[0].landmarks;
+
+                                //  Draw landmarks based on the control panel setting
                                 if (showLandmarks)
                                 {
                                     drawLandmarks(ctx, keypoints)
                                     drawConnections(ctx, keypoints)
                                 }
+                                //  Get palm position
                                 const [centerX, centerY, centerZ] = getCenterOfPalm(keypoints)
+
+                                //  Find difference in movement
                                 const difference = [centerX - lastPalm[0], centerY - lastPalm[1], centerZ - lastPalm[2]]
+
+                                //  Update the previous position
                                 lastPalm = [centerX, centerY, centerZ]
+
+                                //  Find the current gesture
                                 const estimatedGestures = GE.estimate(keypoints, 8.5);
+
+                                //  Normalize coordinates to account for mirrored movement
                                 const ndcX = difference[0]
                                 const ndcY = -difference[1]
                                 setGesture(estimatedGestures)
+
+                                //  Only operate if the pause detection control panel setting is deactivated
                                 if (!pauseDetection)
                                 {
-                                    if (currentGestureRef.current === "pan")
+
+                                    //  Roatate based on radians, normalized palm coordinate, and sensitivity setting
+                                    if (currentGestureRef.current === "rotate")
                                     {
-                                        const newPosX = currentModel.position.x - ndcX
-                                        const newPosY = currentModel.position.y + ndcY
-                                        currentModel.position.x = smoothingInterpolation(currentModel.position.x, newPosX, SMOOTHING_FACTOR);
-                                        currentModel.position.y = smoothingInterpolation(currentModel.position.y, newPosY, SMOOTHING_FACTOR);
-                                    }
-                                    else if (currentGestureRef.current === "grab")
-                                    {
-                                        // current
                                         const newRotationX = currentModel.rotation.x + -ndcY * Math.PI * ROTATION_SENSITIVITY
                                         const newRotationY = currentModel.rotation.y + -ndcX * Math.PI * ROTATION_SENSITIVITY
+
+                                        //  Smooth the adjustments to reduce jitter
                                         currentModel.rotation.x = smoothingInterpolation(currentModel.rotation.x, newRotationX, SMOOTHING_FACTOR)
                                         currentModel.rotation.y = smoothingInterpolation(currentModel.rotation.y, newRotationY, SMOOTHING_FACTOR)
                                     }
+                                    //  Scale each dimension based on the palm's y coordinate, including a scaling sensitivity constant
                                     else if (currentGestureRef.current === "scale")
                                     {
                                         const scaleFactor = smoothingInterpolation(currentModel.scale.y, currentModel.scale.y + ndcY * SCALE_SENSITIVITY, SMOOTHING_FACTOR)
@@ -433,11 +453,7 @@ function HandTracker() {
                                         currentModel.scale.set(scaleFactor, scaleFactor, scaleFactor)
                                     }
                                 }
-                                // console.log(currentModel.scale)
-                                // cube.position.z = ndcZ * -4;
-                                // console.log(detectGesture(keypoints))
                             }
-
                         }
                         catch (error ){
                             console.log(error)
@@ -449,6 +465,7 @@ function HandTracker() {
             }
         }
 
+        //  Draw landmarks based on the keypoints
         function drawLandmarks(ctx, landmarks) {
             landmarks.forEach(([x, y, z]) => {
                 ctx.beginPath()
@@ -458,6 +475,7 @@ function HandTracker() {
             })
         }
 
+        //  Draw each connection for the fingers
         function drawConnections(ctx, landmarks) {
             const connections = [
                 [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
@@ -477,16 +495,14 @@ function HandTracker() {
         }
 
         
-        
-
         function updateFPSLabel(fps) {
             fpsLabel.innerText = `FPS: ${fps}`;
         }
 
+        //  Run the main loops
         setupCamera().then(setupHandTracking())
 
         return () => {
-            // Clean up FPS label
             if (fpsLabel) {
                 fpsLabel.remove();
             }
@@ -494,9 +510,7 @@ function HandTracker() {
 
     })
 
-
     return <div style={{ height: '100vh', position: 'relative', top: 0, left: 0 }}>
-        {/* Container for video and first canvas */}
         <div style={{ position: 'absolute', width: STREAM_WIDTH, height: STREAM_HEIGHT }}>
             <video
                 ref={videoRef}
@@ -519,12 +533,10 @@ function HandTracker() {
                     left: 0,
                     width: `${STREAM_WIDTH}`,
                     height: `${STREAM_HEIGHT}`,
-                    zIndex: 2, // Ensures it overlays on top of the video
+                    zIndex: 2,
                 }}
             />
         </div>
-
-        {/* Second canvas to the right of the video */}
         <canvas
             ref={threejsCavnasRef}
             style={{
